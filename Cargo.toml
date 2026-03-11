@@ -1,6 +1,3 @@
-[package]
-name = "rust-rime-updater"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
+[workspace]
+members = ["src-tauri", "crates/rime-core"]
+resolver = "2"
