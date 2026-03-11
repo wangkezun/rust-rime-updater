@@ -1,6 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { api } from "../lib/tauri";
-import type { SchemeDefinition, ExtraResource } from "../lib/types";
+import type {
+  SchemeDefinition,
+  ExtraResource,
+  DownloadProgress,
+  InstalledVersionInfo,
+} from "../lib/types";
+import { ProgressBar } from "../components/ProgressBar";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
@@ -48,13 +55,82 @@ export function SchemeSelector() {
   const [schemes, setSchemes] = useState<SchemeDefinition[]>([]);
   const [selectedScheme, setSelectedScheme] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [installedVersion, setInstalledVersion] =
+    useState<InstalledVersionInfo | null>(null);
+
+  const [installing, setInstalling] = useState(false);
+  const [installingVariant, setInstallingVariant] = useState<string | null>(
+    null,
+  );
+  const [progress, setProgress] = useState<DownloadProgress | null>(null);
+  const [installError, setInstallError] = useState<string | null>(null);
+  const [installSuccess, setInstallSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listSchemes().then((data) => {
-      setSchemes(data);
-      setLoading(false);
-    });
+    async function load() {
+      try {
+        const [schemesData, versionData] = await Promise.allSettled([
+          api.listSchemes(),
+          api.getInstalledVersion(),
+        ]);
+        if (schemesData.status === "fulfilled") {
+          setSchemes(schemesData.value);
+        }
+        if (versionData.status === "fulfilled") {
+          setInstalledVersion(versionData.value);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
   }, []);
+
+  useEffect(() => {
+    const unlisten = listen<DownloadProgress>("download-progress", (event) => {
+      setProgress(event.payload);
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<InstalledVersionInfo>(
+      "install-complete",
+      (event) => {
+        setInstalling(false);
+        setInstallingVariant(null);
+        setProgress(null);
+        setInstalledVersion(event.payload);
+        setInstallSuccess(
+          `${event.payload.variant_id} @ ${event.payload.version} 安装成功`,
+        );
+      },
+    );
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const handleInstall = useCallback(
+    async (schemeId: string, variantId: string, version: string) => {
+      setInstalling(true);
+      setInstallingVariant(variantId);
+      setInstallError(null);
+      setInstallSuccess(null);
+      setProgress(null);
+      try {
+        await api.installUpdate(schemeId, variantId, version);
+      } catch (err) {
+        setInstallError(String(err));
+        setInstalling(false);
+        setInstallingVariant(null);
+        setProgress(null);
+      }
+    },
+    [],
+  );
 
   if (loading) {
     return (
@@ -70,14 +146,39 @@ export function SchemeSelector() {
     <div className="max-w-3xl">
       <h2 className="text-2xl font-bold text-slate-900 mb-6">方案管理</h2>
 
+      {installError && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          安装失败: {installError}
+        </div>
+      )}
+
+      {installSuccess && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+          {installSuccess}
+        </div>
+      )}
+
+      {installing && progress && (
+        <div className="mb-4 p-4 bg-white rounded-lg shadow-sm border border-slate-200">
+          <p className="text-sm text-slate-600 mb-2">
+            正在下载 {installingVariant}...
+          </p>
+          <ProgressBar
+            downloaded={progress.downloaded_bytes}
+            total={progress.total_bytes}
+            speed={progress.speed_bytes_per_sec}
+          />
+        </div>
+      )}
+
       <div className="space-y-4">
         {schemes.map((scheme) => {
           const isExpanded = activeScheme?.id === scheme.id;
           const grammarModels = scheme.extra_resources.filter(
-            (r) => r.category === "GrammarModel"
+            (r) => r.category === "GrammarModel",
           );
           const predictionDbs = scheme.extra_resources.filter(
-            (r) => r.category === "PredictionDb"
+            (r) => r.category === "PredictionDb",
           );
 
           return (
@@ -88,7 +189,7 @@ export function SchemeSelector() {
               <button
                 onClick={() =>
                   setSelectedScheme(
-                    selectedScheme === scheme.id ? null : scheme.id
+                    selectedScheme === scheme.id ? null : scheme.id,
                   )
                 }
                 className="w-full p-5 text-left hover:bg-slate-50 transition-colors"
@@ -110,6 +211,13 @@ export function SchemeSelector() {
                         </span>
                       )}
                     </div>
+                    {installedVersion &&
+                      installedVersion.scheme_id === scheme.id && (
+                        <p className="text-xs text-green-600 mt-1">
+                          已安装: {installedVersion.variant_id} @{" "}
+                          {installedVersion.version}
+                        </p>
+                      )}
                   </div>
                   <span className="text-slate-400">
                     {isExpanded ? "▲" : "▼"}
@@ -124,25 +232,53 @@ export function SchemeSelector() {
                     <h4 className="text-sm font-medium text-slate-700 mb-3">
                       输入方案变体
                     </h4>
+                    <p className="text-xs text-slate-500 mb-3">
+                      选择一个变体进行安装。需要先在仪表盘检查最新版本。
+                    </p>
                     <div className="grid gap-2">
-                      {scheme.variants.map((variant) => (
-                        <div
-                          key={variant.id}
-                          className="flex items-center justify-between p-3 bg-white rounded-md border border-slate-200"
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-slate-900">
-                              {variant.name}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {variant.description}
-                            </p>
+                      {scheme.variants.map((variant) => {
+                        const isInstalled =
+                          installedVersion?.scheme_id === scheme.id &&
+                          installedVersion?.variant_id === variant.id;
+                        const isThisInstalling =
+                          installing && installingVariant === variant.id;
+
+                        return (
+                          <div
+                            key={variant.id}
+                            className={`flex items-center justify-between p-3 bg-white rounded-md border ${isInstalled ? "border-green-300" : "border-slate-200"}`}
+                          >
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-slate-900">
+                                  {variant.name}
+                                </p>
+                                {isInstalled && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700">
+                                    已安装
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-500">
+                                {variant.description}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() =>
+                                handleInstall(
+                                  scheme.id,
+                                  variant.id,
+                                  installedVersion?.version || "latest",
+                                )
+                              }
+                              disabled={installing}
+                              className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {isThisInstalling ? "安装中..." : "安装"}
+                            </button>
                           </div>
-                          <button className="px-3 py-1.5 text-xs bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors">
-                            安装
-                          </button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 

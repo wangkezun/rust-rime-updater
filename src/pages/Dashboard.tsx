@@ -6,6 +6,7 @@ import type {
   RimeDirectoryInfo,
   UpdateStatus,
   DownloadProgress,
+  InstalledVersionInfo,
 } from "../lib/types";
 import { StatusBadge } from "../components/StatusBadge";
 import { ProgressBar } from "../components/ProgressBar";
@@ -27,13 +28,21 @@ export function Dashboard() {
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupMessage, setBackupMessage] = useState<string | null>(null);
 
+  const [installedVersion, setInstalledVersion] =
+    useState<InstalledVersionInfo | null>(null);
+
   useEffect(() => {
     async function load() {
       try {
-        const [schemesData, dirData] = await Promise.allSettled([
+        const [schemesData, dirData, versionData] = await Promise.allSettled([
           api.listSchemes(),
           api.getRimeDirectory(),
+          api.getInstalledVersion(),
         ]);
+
+        if (versionData.status === "fulfilled" && versionData.value) {
+          setInstalledVersion(versionData.value);
+        }
 
         if (schemesData.status === "fulfilled") {
           setSchemes(schemesData.value);
@@ -62,10 +71,11 @@ export function Dashboard() {
 
   // Listen for install complete events
   useEffect(() => {
-    const unlisten = listen("install-complete", () => {
+    const unlisten = listen<InstalledVersionInfo>("install-complete", (event) => {
       setInstalling(false);
       setProgress(null);
       setUpdateStatus({ type: "UpToDate" });
+      setInstalledVersion(event.payload);
     });
     return () => {
       unlisten.then((fn) => fn());
@@ -247,7 +257,11 @@ export function Dashboard() {
                       ` | ${scheme.extra_resources.length} 个附加资源 (语法模型/预测数据库)`}
                   </p>
                 </div>
-                <StatusBadge status="unknown" label="未安装" />
+                {installedVersion?.scheme_id === scheme.id ? (
+                  <StatusBadge status="ok" label={`${installedVersion.variant_id} @ ${installedVersion.version}`} />
+                ) : (
+                  <StatusBadge status="unknown" label="未安装" />
+                )}
               </div>
             ))}
           </div>

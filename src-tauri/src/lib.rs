@@ -30,6 +30,7 @@ pub fn run() {
             commands::settings::get_rime_directory,
             commands::update::check_for_update,
             commands::update::install_update,
+            commands::update::get_installed_version,
             commands::backup::list_backups,
             commands::backup::create_backup,
             commands::backup::restore_backup,

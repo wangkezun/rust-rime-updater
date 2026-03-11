@@ -115,6 +115,13 @@ pub async fn install_update(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn get_installed_version(
+    state: State<'_, AppState>,
+) -> Result<Option<InstalledVersionInfo>, AppError> {
+    Ok(read_installed_version(&state.app_data_dir))
+}
+
 fn read_installed_version(
     app_data_dir: &std::path::Path,
 ) -> Option<InstalledVersionInfo> {

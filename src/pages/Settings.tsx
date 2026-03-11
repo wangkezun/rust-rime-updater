@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { api } from "../lib/tauri";
 import type { AppConfig, RimeDirectoryInfo } from "../lib/types";
 
@@ -6,6 +6,9 @@ export function Settings() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [rimeDir, setRimeDir] = useState<RimeDirectoryInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -28,6 +31,31 @@ export function Settings() {
     load();
   }, []);
 
+  const updateField = useCallback(
+    (updates: Partial<AppConfig>) => {
+      if (!config) return;
+      setConfig({ ...config, ...updates });
+      setDirty(true);
+      setMessage(null);
+    },
+    [config],
+  );
+
+  const handleSave = useCallback(async () => {
+    if (!config) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api.updateSettings(config);
+      setMessage("设置已保存");
+      setDirty(false);
+    } catch (err) {
+      setMessage(`保存失败: ${String(err)}`);
+    } finally {
+      setSaving(false);
+    }
+  }, [config]);
+
   if (loading || !config) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -38,7 +66,21 @@ export function Settings() {
 
   return (
     <div className="max-w-3xl">
-      <h2 className="text-2xl font-bold text-slate-900 mb-6">设置</h2>
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-slate-900">设置</h2>
+        <div className="flex items-center gap-3">
+          {message && (
+            <span className="text-sm text-slate-600">{message}</span>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={saving || !dirty}
+            className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? "保存中..." : "保存设置"}
+          </button>
+        </div>
+      </div>
 
       {/* Rime Directory */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5 mb-4">
@@ -55,21 +97,31 @@ export function Settings() {
         ) : (
           <p className="text-sm text-slate-500">未检测到 Rime 目录</p>
         )}
+        <div className="mt-3">
+          <label className="text-sm text-slate-600">自定义目录 (可选)</label>
+          <input
+            type="text"
+            value={config.rime_dir_override || ""}
+            onChange={(e) =>
+              updateField({
+                rime_dir_override: e.target.value || undefined,
+              })
+            }
+            placeholder="留空则使用自动检测的目录"
+            className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+          />
+        </div>
       </div>
 
       {/* Backup Settings */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5 mb-4">
-        <h3 className="text-sm font-medium text-slate-500 mb-3">
-          备份设置
-        </h3>
+        <h3 className="text-sm font-medium text-slate-500 mb-3">备份设置</h3>
         <div className="space-y-3">
           <label className="flex items-center gap-3">
             <input
               type="checkbox"
               checked={config.auto_backup}
-              onChange={(e) =>
-                setConfig({ ...config, auto_backup: e.target.checked })
-              }
+              onChange={(e) => updateField({ auto_backup: e.target.checked })}
               className="rounded border-slate-300"
             />
             <span className="text-sm text-slate-700">更新前自动备份</span>
@@ -80,8 +132,7 @@ export function Settings() {
               type="number"
               value={config.max_backups}
               onChange={(e) =>
-                setConfig({
-                  ...config,
+                updateField({
                   max_backups: parseInt(e.target.value) || 10,
                 })
               }
@@ -95,18 +146,13 @@ export function Settings() {
 
       {/* Update Settings */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5 mb-4">
-        <h3 className="text-sm font-medium text-slate-500 mb-3">
-          更新设置
-        </h3>
+        <h3 className="text-sm font-medium text-slate-500 mb-3">更新设置</h3>
         <label className="flex items-center gap-3">
           <input
             type="checkbox"
             checked={config.check_updates_on_launch}
             onChange={(e) =>
-              setConfig({
-                ...config,
-                check_updates_on_launch: e.target.checked,
-              })
+              updateField({ check_updates_on_launch: e.target.checked })
             }
             className="rounded border-slate-300"
           />
@@ -116,9 +162,7 @@ export function Settings() {
 
       {/* Network Settings */}
       <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-5">
-        <h3 className="text-sm font-medium text-slate-500 mb-3">
-          网络设置
-        </h3>
+        <h3 className="text-sm font-medium text-slate-500 mb-3">网络设置</h3>
         <div className="space-y-3">
           <div>
             <label className="text-sm text-slate-600">
@@ -128,8 +172,7 @@ export function Settings() {
               type="password"
               value={config.github_token || ""}
               onChange={(e) =>
-                setConfig({
-                  ...config,
+                updateField({
                   github_token: e.target.value || undefined,
                 })
               }
@@ -143,8 +186,7 @@ export function Settings() {
               type="text"
               value={config.proxy_url || ""}
               onChange={(e) =>
-                setConfig({
-                  ...config,
+                updateField({
                   proxy_url: e.target.value || undefined,
                 })
               }

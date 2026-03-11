@@ -5,6 +5,7 @@ import type {
   AppConfig,
   UpdateStatus,
   BackupMetadata,
+  InstalledVersionInfo,
 } from "./types";
 
 export const api = {
@@ -24,6 +25,9 @@ export const api = {
 
   installUpdate: (schemeId: string, variantId: string, version: string) =>
     invoke<void>("install_update", { schemeId, variantId, version }),
+
+  getInstalledVersion: () =>
+    invoke<InstalledVersionInfo | null>("get_installed_version"),
 
   listBackups: () => invoke<BackupMetadata[]>("list_backups"),
 
