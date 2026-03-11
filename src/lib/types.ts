@@ -65,3 +65,27 @@ export interface DownloadProgress {
   total_bytes: number | null;
   speed_bytes_per_sec: number;
 }
+
+export interface AssetInfo {
+  name: string;
+  size: number;
+  download_url: string;
+  content_type: string;
+}
+
+export interface ReleaseInfo {
+  tag_name: string;
+  name: string;
+  published_at: string;
+  body: string;
+  assets: AssetInfo[];
+}
+
+export type UpdateStatus =
+  | { type: "UpToDate" }
+  | {
+      type: "UpdateAvailable";
+      current: string | null;
+      latest: string;
+      release: ReleaseInfo;
+    };

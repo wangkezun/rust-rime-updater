@@ -1,5 +1,4 @@
 interface ConfirmDialogProps {
-  open: boolean;
   title: string;
   message: string;
   confirmLabel?: string;
@@ -10,7 +9,6 @@ interface ConfirmDialogProps {
 }
 
 export function ConfirmDialog({
-  open,
   title,
   message,
   confirmLabel = "确认",
@@ -19,8 +17,6 @@ export function ConfirmDialog({
   onCancel,
   danger = false,
 }: ConfirmDialogProps) {
-  if (!open) return null;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
